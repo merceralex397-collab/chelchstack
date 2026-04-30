@@ -28,6 +28,8 @@ This repo follows the [LLM Wiki](llm-wiki.md) pattern: a persistent, compounding
 
 - `agents.md` — The schema that tells LLMs how to maintain and extend this stack
 - `llm-wiki.md` — The pattern this stack is built on
+- `mcp-servers/filesystem/README.md` — ChatGPT-compatible filesystem server for this repo
+- `docs/mcp-filesystem-setup.md` — Local and ngrok setup for ChatGPT
 
 ## How It Works
 

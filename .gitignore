@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+package-lock.json
+bun.lock
+
+# Runtime folders (live agent folders - these are installed/generated)
+.opencode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Obsidian (runtime files only, not the vault itself)
+.obsidian/workspace*
+.obsidian/graph.json
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Temp
+.tmp/
+temp/
