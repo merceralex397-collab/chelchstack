@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
@@ -10,7 +10,6 @@ import {
   readTextFile,
   resolveRepoPath,
   repoRoot,
-  statOrNull,
 } from "./fs-root.js";
 import { writeMarkdownNote } from "./fs-markdown.js";
 
@@ -38,12 +37,7 @@ function createServer() {
       title: "List files",
       description: "Use this when you need to inspect repo structure.",
       inputSchema: {
-        type: "object",
-        properties: {
-          dir: { type: "string", default: ".", description: "Directory relative to repo root" },
-        },
-        required: [],
-        additionalProperties: false,
+        dir: z.string().default(".").describe("Directory relative to repo root"),
       },
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true },
     },
@@ -56,12 +50,7 @@ function createServer() {
       title: "Read file",
       description: "Use this when you need file contents from this repo.",
       inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "File path relative to repo root" },
-        },
-        required: ["path"],
-        additionalProperties: false,
+        path: z.string().describe("File path relative to repo root"),
       },
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false, idempotentHint: true },
     },
@@ -81,13 +70,8 @@ function createServer() {
       title: "Write file",
       description: "Use this when you need to create or replace a file in the repo.",
       inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["path", "content"],
-        additionalProperties: false,
+        path: z.string(),
+        content: z.string(),
       },
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
     },
@@ -108,13 +92,8 @@ function createServer() {
       title: "Move path",
       description: "Use this when you need to rename or move a file or folder inside the repo.",
       inputSchema: {
-        type: "object",
-        properties: {
-          from: { type: "string" },
-          to: { type: "string" },
-        },
-        required: ["from", "to"],
-        additionalProperties: false,
+        from: z.string(),
+        to: z.string(),
       },
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true },
     },
@@ -136,12 +115,7 @@ function createServer() {
       title: "Delete path",
       description: "Use this when you need to remove a file or folder from the repo.",
       inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-        },
-        required: ["path"],
-        additionalProperties: false,
+        path: z.string(),
       },
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true },
     },
@@ -161,14 +135,9 @@ function createServer() {
       title: "Save markdown note",
       description: "Use this when ChatGPT should save user input as a markdown note in the repo.",
       inputSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          body: { type: "string" },
-          folder: { type: "string", default: "docs/inbox" },
-        },
-        required: ["title", "body"],
-        additionalProperties: false,
+        title: z.string(),
+        body: z.string(),
+        folder: z.string().default("docs/inbox"),
       },
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false, idempotentHint: false },
     },
@@ -208,27 +177,41 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === mcpPath) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
-    if (req.method === "OPTIONS") {
-      res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "content-type, mcp-session-id",
+    try {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, {
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "content-type, mcp-session-id",
+        });
+        res.end();
+        return;
+      }
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
       });
-      res.end();
-      return;
+      const body = req.method === "POST" ? await readJsonBody(req) : undefined;
+
+      res.on("close", () => transport.close());
+      const server = createServer();
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } catch (error) {
+      console.error("MCP request failed:", error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      }
+      if (!res.writableEnded) {
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        }));
+      }
     }
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-    const body = req.method === "POST" ? await readJsonBody(req) : undefined;
-
-    res.on("close", () => transport.close());
-    const server = createServer();
-    await server.connect(transport);
-    await transport.handleRequest(req, res, body);
     return;
   }
 
